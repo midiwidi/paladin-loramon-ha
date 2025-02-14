@@ -2,7 +2,7 @@
 
 ## Overview
 
-`paladin-loramon-ha` reads and processes data from a Paladin LoRa Monitor connected via a serial port and publishes the parsed values to Home Assistant using MQTT. This allows real-time monitoring and visualization of power, energy and temperature data from a Paladin Solar Diverter in Home Assistant.
+`paladin-loramon-ha` reads and processes data from a Paladin LoRa Monitor connected via a serial port and publishes the parsed values to Home Assistant using MQTT. This allows real-time monitoring and visualization of power, energy and temperature data from a Paladin Solar Diverter in Home Assistant. No configuration is necessary in Home Assistant as the device and all entities are created automatically via MQTT.
 
 ## Installation
 
