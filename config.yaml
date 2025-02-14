@@ -1,0 +1,125 @@
+loglevel: "INFO"
+
+mqtt:
+  host: "192.168.1.23"
+  port: 1883
+  discovery_prefix: "homeassistant"
+  state_prefix: "home/sensors/paladin"
+  device_id: "paladin"
+  # Optionally add credentials:
+  #username: "mqtt-usersername"
+  #password: "mqtt-password"
+
+serial:
+  # Examples: Windows -> "COM3", Linux -> "/dev/ttyUSB0"
+  port: "COM8"
+  baud_rate: 57600
+
+device:
+  name: "Paladin Lora Monitor"
+  manufacturer: "Paladin Solar Australia Pty Ltd"
+  model: "v2.3"
+
+# Each key (as a string) corresponds to the field index in the serial input.
+# Remove or comment the ones you don't want to publish to Home Assistant
+sensors:
+  "0":
+    name: "Mains Power"
+    unique_id: "paladin_mains_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "1":
+    name: "HWC Diverted Power"
+    unique_id: "paladin_diverted_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "2":
+    name: "Solar (PV) Power"
+    unique_id: "paladin_solar_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "3":
+    name: "Hot Water Temperature"
+    unique_id: "paladin_water_temperature"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+  "4":
+    name: "Hot Water Temperature Delta (past 15min)"
+    unique_id: "paladin_dt"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+  "5":
+    name: "Minimum Temperature Setpoint"
+    unique_id: "paladin_tmin"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+  "6":
+    name: "Maximum Temperature Setpoint"
+    unique_id: "paladin_tmax"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+  "7":
+    name: "Grid Power Consumed"
+    unique_id: "paladin_grid_in"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "8":
+    name: "Grid Power Exported"
+    unique_id: "paladin_grid_out"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "9":
+    name: "HWC Diverted Power (5s average)"
+    unique_id: "paladin_diverted_power_avg"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "10":
+    name: "HWC Top Up Power"
+    unique_id: "paladin_topup_power"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "11":
+    name: "Solar Power (5s average)"
+    unique_id: "paladin_solar_power_avg"
+    unit_of_measurement: "W"
+    device_class: "power"
+  "12":
+    name: "Health Hours since 63°C"
+    unique_id: "paladin_hhours"
+    unit_of_measurement: "h"
+    device_class: "duration"
+  "13":
+    name: "Total Grid Energy Consumed"
+    unique_id: "paladin_grid_in_total"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+  "14":
+    name: "Total Grid Energy Exported"
+    unique_id: "paladin_grid_out_total"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+  "15":
+    name: "Total HWC Top Up Energy"
+    unique_id: "paladin_topup_total"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+  "16":
+    name: "Total HWC Diverted Energy"
+    unique_id: "paladin_diverted_total"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+  "17":
+    name: "Total Solar (PV) Energy"
+    unique_id: "paladin_solar_total"
+    unit_of_measurement: "kWh"
+    device_class: "energy"
+  "18":
+    name: "Paladin SSR Output"
+    unique_id: "paladin_ssr_pwm"
+    unit_of_measurement: "%"
+    device_class: ""
+  "19":
+    name: "Timestamp (Hack)"
+    unique_id: "paladin_timestamp_hack"
+    unit_of_measurement: "s"
+    device_class: ""
