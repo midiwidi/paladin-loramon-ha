@@ -5,5 +5,7 @@ name = "pypi"
 
 [packages]
 pyyaml = "*"
+pyserial = "*"
+paho-mqtt = "*"
 
 [dev-packages]
