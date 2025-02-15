@@ -81,7 +81,6 @@ def publish_discovery(client, config):
         discovery_topic = f"{discovery_prefix}/sensor/{device_id}/{sensor_key}/config"
         sensor_state_topic = f"{state_prefix}/{device_id}/{sensor_key}/state"
         payload = {
-            "name": sensor_name,
             "state_topic": sensor_state_topic,
             "unique_id": f"{device_id}_{sensor_key}",
             "device": {
@@ -91,12 +90,9 @@ def publish_discovery(client, config):
                 "manufacturer": manufacturer,
             },
         }
-        # Include additional sensor attributes if provided.
-        if sensor_conf.get("unit_of_measurement"):
-            payload["unit_of_measurement"] = sensor_conf["unit_of_measurement"]
-        if sensor_conf.get("device_class"):
-            payload["device_class"] = sensor_conf["device_class"]
-
+        # Add all attributes given in the config to the payload
+        payload.update(sensor_conf)
+        
         client.publish(discovery_topic, payload=json.dumps(payload), retain=True)
         logger.info("Published discovery for sensor '%s' (field %s) on topic '%s'",
                      sensor_name, sensor_key, discovery_topic)
