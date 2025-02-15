@@ -92,7 +92,7 @@ def publish_discovery(client, config):
         }
         # Add all attributes given in the config to the payload
         payload.update(sensor_conf)
-        
+
         client.publish(discovery_topic, payload=json.dumps(payload), retain=True)
         logger.info("Published discovery for sensor '%s' (field %s) on topic '%s'",
                      sensor_name, sensor_key, discovery_topic)
@@ -149,6 +149,8 @@ def process_line(line, config, mqtt_client):
             value = fields[index]
             sensor_state_topic = f"{state_prefix}/{device_id}/{sensor_key}/state"
             if is_number(value):
+                if index == 13:
+                    value = str(-int(value))
                 if index == 18:
                     value = f'{100.0 * int(value) / 255.0:.2f}'
                 mqtt_client.publish(sensor_state_topic, payload=value)
