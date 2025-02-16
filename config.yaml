@@ -90,27 +90,27 @@ sensors:
     state_class: "measurement"
   "13":
     name: "Total Grid Energy Consumed"
-    unit_of_measurement: "kWh"
+    unit_of_measurement: "Wh"
     device_class: "energy"
     state_class: "total_increasing"
   "14":
     name: "Total Grid Energy Exported"
-    unit_of_measurement: "kWh"
+    unit_of_measurement: "Wh"
     device_class: "energy"
     state_class: "total_increasing"
   "15":
     name: "Total HWC Top Up Energy"
-    unit_of_measurement: "kWh"
+    unit_of_measurement: "Wh"
     device_class: "energy"
     state_class: "total_increasing"
   "16":
     name: "Total HWC Diverted Energy"
-    unit_of_measurement: "kWh"
+    unit_of_measurement: "Wh"
     device_class: "energy"
     state_class: "total_increasing"
   "17":
     name: "Total Solar (PV) Energy"
-    unit_of_measurement: "kWh"
+    unit_of_measurement: "Wh"
     device_class: "energy"
     state_class: "total_increasing"
   "18":
