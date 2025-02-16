@@ -35,6 +35,7 @@ Edit the `config.yaml` file to specify connection settings for MQTT, the serial 
 
 - `port`: The serial port device (e.g., `/dev/ttyUSB0` on Linux, `COM3` on Windows, must be set by the user).
 - `baud_rate`: The baud rate for serial communication (default: `57600`, usually left as is).
+- `data_timeout`: A timeout period in seconds after which a "no data" warning is issued.
 
 ### Device Information
 

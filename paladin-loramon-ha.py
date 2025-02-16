@@ -2,6 +2,7 @@ import yaml
 import serial
 import logging
 import time
+from datetime import datetime
 import json
 import sys
 import random
@@ -102,13 +103,18 @@ def open_serial_port(config):
     serial_conf = config.get("serial", {})
     port = serial_conf.get("port", "/dev/ttyUSB0")
     baud_rate = serial_conf.get("baud_rate", 9600)
-    try:
-        ser = serial.Serial(port, baud_rate, timeout=1)
-        logger.info("Opened serial port %s at %s baud", port, baud_rate)
-        return ser
-    except serial.SerialException as e:
-        logger.error("Error opening serial port: %s", e)
-        sys.exit(1)
+    retry_delay = 1
+    max_retry_delay = 3600
+    while True:
+        try:
+            ser = serial.Serial(port, baud_rate, timeout=1)
+            logger.info("Opened serial port %s at %s baud", port, baud_rate)
+            return ser
+        except serial.SerialException as e:
+            logger.error(f"Error opening serial port: %s - retrying in {retry_delay}s ...", e)
+            time.sleep(retry_delay)
+            # Exponentially back-off the retry delay (double it) but limit it to max_retry_delay
+            retry_delay = min(retry_delay * 2, max_retry_delay)
 
 def process_line(line, config, mqtt_client):
     """
@@ -176,19 +182,43 @@ def main():
         time.sleep(0.5)
         
     publish_discovery(mqtt_client, config)
-    ser = open_serial_port(config)
 
+    ser = open_serial_port(config)
+    nodata_timeout = config.get('serial', {}).get('data_timeout', None)
+    timestamp_of_last_data = datetime.now()
+    state_no_data = False
     try:
         while True:
-            if ser.in_waiting:
-                try:
-                    line = ser.readline().decode("utf-8")
-                except UnicodeDecodeError as e:
-                    logger.error("Error decoding serial data: %s", e)
-                    continue
-                process_line(line, config, mqtt_client)
-            else:
-                time.sleep(0.1)
+            try:
+                if ser.in_waiting:
+                    try:
+                        line = ser.readline().decode("utf-8")
+                    except UnicodeDecodeError as e:
+                        logger.error("Error decoding serial data: %s", e)
+                        continue
+                    
+                    if state_no_data:
+                        dt = (datetime.now() - timestamp_of_last_data).total_seconds()
+                        logger.info(f'Receiving data again after {dt:.1f} seconds')
+                    
+                    timestamp_of_last_data = datetime.now()
+                    state_no_data = False
+                    process_line(line, config, mqtt_client)
+                else:
+                    if state_no_data == False:
+                        if nodata_timeout:
+                            dt = (datetime.now() - timestamp_of_last_data).total_seconds()
+                            if dt > nodata_timeout:
+                                state_no_data = True
+                                logger.warning(f'Received no data for more than {dt:.1f} seconds')
+                    time.sleep(0.1)
+            except serial.SerialException as e:
+                logger.warning('Error accessing serial port - reopening it and trying again ...')
+                ser.close()
+                ser = open_serial_port(config)
+                timestamp_of_last_data = datetime.now()
+                state_no_data = False
+                continue
     except KeyboardInterrupt:
         logger.info("Received shutdown signal. Exiting...")
     finally:
