@@ -10,6 +10,11 @@ import paho.mqtt.client as mqtt
 
 client_id = f'python-mqtt-{random.randint(0, 1000)}'
 
+# Global variables for reset detection
+last_values = {}
+reset_detected_today = False
+last_reset_time = None
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -122,6 +127,8 @@ def process_line(line, config, mqtt_client):
     For each sensor defined in the config, publish its value (if present)
     to the corresponding MQTT state topic.
     """
+    global last_values, reset_detected_today, last_reset_time
+    
     mqtt_conf = config.get("mqtt", {})
     state_prefix = mqtt_conf.get("state_prefix", "home/sensors/home_power")
     device_id = mqtt_conf.get("device_id", "default_device_id")
@@ -138,7 +145,51 @@ def process_line(line, config, mqtt_client):
         return
     logger.debug("Received fields: %s", fields)
 
-    # Only process the sensor keys that are present in the config.
+    # Check if we've moved to a new day (reset the daily flag)
+    current_time = datetime.now()
+    if last_reset_time and current_time.date() > last_reset_time.date():
+        reset_detected_today = False
+        logger.info("New day detected, reset detection flag cleared")
+
+    # Collect energy sensor values for reset detection
+    energy_sensors = ["13", "14", "15", "16", "17"]  # All your energy sensors
+    current_energy_values = {}
+    reset_votes = 0
+    
+    for sensor_key in energy_sensors:
+        if sensor_key in sensors:
+            try:
+                index = int(sensor_key)
+                if index < len(fields) and is_number(fields[index]):
+                    current_value = float(fields[index])
+                    current_energy_values[sensor_key] = current_value
+                    
+                    # Check for reset (current value much smaller than previous)
+                    if sensor_key in last_values:
+                        if current_value < last_values[sensor_key] * 0.5:  # 50% threshold
+                            reset_votes += 1
+                            logger.debug(f"Reset vote from sensor {sensor_key}: {last_values[sensor_key]} -> {current_value}")
+            except (ValueError, IndexError):
+                continue
+
+    # Majority vote: if 3 or more energy sensors show reset, it's a reset
+    if reset_votes >= 3 and not reset_detected_today:
+        reset_detected_today = True
+        last_reset_time = current_time
+        reset_timestamp = current_time.isoformat()
+        logger.info(f"RESET DETECTED at {reset_timestamp} - {reset_votes} sensors voted for reset")
+        
+        # Publish last_reset for all energy sensors
+        for sensor_key in energy_sensors:
+            if sensor_key in sensors:
+                reset_topic = f"{state_prefix}/{device_id}/{sensor_key}/last_reset"
+                mqtt_client.publish(reset_topic, payload=reset_timestamp, retain=True)
+                logger.info(f"Published last_reset for sensor {sensor_key}: {reset_timestamp}")
+
+    # Update last_values with current values
+    last_values.update(current_energy_values)
+
+    # Now process and publish all sensors normally
     for sensor_key in sorted(sensors, key=lambda x: int(x)):
         sensor_conf = sensors[sensor_key]
         sensor_name = sensor_conf.get("name")
