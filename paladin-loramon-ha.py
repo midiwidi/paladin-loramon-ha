@@ -294,15 +294,10 @@ def process_line(line, config, mqtt_client):
                                 sensor_name, sensor_key, cumulative_value, sensor_state_topic)
                 # For other energy sensors, send JSON with state and optionally last_reset
                 elif sensor_key in energy_sensors:
-                    payload = {"state": float(value) if index != 13 else int(value)}
-                    
-                    # Add last_reset if we just detected a reset
-                    if reset_timestamp:
-                        payload["last_reset"] = reset_timestamp
-                        
-                    mqtt_client.publish(sensor_state_topic, payload=json.dumps(payload))
+                    value_to_send = float(value) if index != 13 else int(value)
+                    mqtt_client.publish(sensor_state_topic, payload=str(value_to_send))
                     logger.debug("Published energy sensor '%s' (field %s): %s to topic '%s'",
-                                sensor_name, sensor_key, payload, sensor_state_topic)
+                                sensor_name, sensor_key, value_to_send, sensor_state_topic)
                 else:
                     # For non-energy sensors, send plain value
                     mqtt_client.publish(sensor_state_topic, payload=value)
