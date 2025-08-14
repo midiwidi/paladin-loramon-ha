@@ -128,7 +128,7 @@ def publish_discovery(client, config):
             continue
 
         discovery_topic = f"{discovery_prefix}/sensor/{device_id}/{sensor_key}/config"
-        sensor_state_topic = f"{state_prefix}/{device_id}/{sensor_key}/state"
+        sensor_state_topic = f"{state_prefix}/{sensor_key}/state"  # Remove device_id segment
         payload = {
             "state_topic": sensor_state_topic,
             "unique_id": f"{device_id}_{sensor_key}",
@@ -269,7 +269,7 @@ def process_line(line, config, mqtt_client):
 
         if index < len(fields):
             value = fields[index]
-            sensor_state_topic = f"{state_prefix}/{device_id}/{sensor_key}/state"
+            sensor_state_topic = f"{state_prefix}/{sensor_key}/state"
             
             if is_number(value):
                 # Apply transformations
