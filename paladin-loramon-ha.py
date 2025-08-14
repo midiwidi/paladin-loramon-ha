@@ -6,14 +6,21 @@ from datetime import datetime
 import json
 import sys
 import random
+import os
 import paho.mqtt.client as mqtt
 
 client_id = f'python-mqtt-{random.randint(0, 1000)}'
 
-# Global variables for reset detection
+# Global variables for reset detection and cumulative tracking
 last_values = {}
 reset_detected_today = False
 last_reset_time = None
+last_cleared_date = None  # Track what date we last cleared the reset flag
+cumulative_totals = {}  # Store cumulative totals for energy sensors
+last_raw_values = {}    # Store last raw values before reset
+
+# File to persist cumulative totals
+CUMULATIVE_DATA_FILE = "cumulative_totals.json"
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -24,6 +31,30 @@ def is_number(s):
         return True
     except ValueError:
         return False
+
+def load_cumulative_data():
+    """Load cumulative totals from file if it exists."""
+    global cumulative_totals
+    if os.path.exists(CUMULATIVE_DATA_FILE):
+        try:
+            with open(CUMULATIVE_DATA_FILE, 'r') as f:
+                cumulative_totals = json.load(f)
+            logger.info(f"Loaded cumulative totals from {CUMULATIVE_DATA_FILE}: {cumulative_totals}")
+        except Exception as e:
+            logger.warning(f"Failed to load cumulative data: {e}, starting fresh")
+            cumulative_totals = {}
+    else:
+        logger.info("No existing cumulative data file found, starting fresh")
+        cumulative_totals = {}
+
+def save_cumulative_data():
+    """Save cumulative totals to file."""
+    try:
+        with open(CUMULATIVE_DATA_FILE, 'w') as f:
+            json.dump(cumulative_totals, f, indent=2)
+        logger.debug(f"Saved cumulative totals to {CUMULATIVE_DATA_FILE}")
+    except Exception as e:
+        logger.error(f"Failed to save cumulative data: {e}")
     
 def load_config(config_path="config.yaml"):
     """Load configuration settings from a YAML file."""
@@ -42,7 +73,7 @@ def on_connect(client, userdata, flags, rc, properties):
     else:
         logger.info("Failed to connect, return code %d\n", rc)
 
-def connect_mqtt(config):   
+def connect_mqtt(config, delay=10):   
     # Set Connecting Client ID
     client = mqtt.Client(client_id=client_id, callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
 
@@ -56,8 +87,16 @@ def connect_mqtt(config):
     client.enable_logger()
 
     client.on_connect = on_connect
-    client.connect(host, port)
-    return client
+    
+    while True:
+        try:
+            client.connect(host, port)
+            logger.info("Connected to MQTT broker at %s:%s", host, port)
+            return client
+        except Exception as e:
+            logger.warning("MQTT broker not ready (%s). Retrying in %s seconds...", e, delay)
+            time.sleep(delay)
+
 
 def publish_discovery(client, config):
     """
@@ -75,6 +114,10 @@ def publish_discovery(client, config):
     device_id = mqtt_conf.get("device_id", "default_device_id")
 
     sensors = config.get("sensors", {})
+    
+    # Automatically detect energy sensors based on device_class
+    energy_sensors = [key for key, sensor_conf in sensors.items() 
+                     if sensor_conf.get("device_class") == "energy"]
 
     # Iterate over defined sensor keys (sorted by their numeric value)
     for sensor_key in sorted(sensors, key=lambda x: int(x)):
@@ -96,8 +139,21 @@ def publish_discovery(client, config):
                 "manufacturer": manufacturer,
             },
         }
+        
         # Add all attributes given in the config to the payload
         payload.update(sensor_conf)
+        
+        # For sensor 15 specifically, ensure it uses total_increasing
+        if sensor_key == "15" and sensor_key in energy_sensors:
+            payload["state_class"] = "total_increasing"
+            # Remove last_reset_value_template if it exists in config
+            payload.pop("last_reset_value_template", None)
+            logger.info("Configured sensor 15 for cumulative (total_increasing) tracking")
+        # For other energy sensors, add JSON parsing templates for last_reset support
+        elif sensor_key in energy_sensors:
+            payload["value_template"] = "{{ value_json.state }}"
+            payload["json_attributes_topic"] = sensor_state_topic
+            payload["json_attributes_template"] = "{{ value_json | tojson }}"
 
         client.publish(discovery_topic, payload=json.dumps(payload), retain=True)
         logger.info("Published discovery for sensor '%s' (field %s) on topic '%s'",
@@ -127,7 +183,7 @@ def process_line(line, config, mqtt_client):
     For each sensor defined in the config, publish its value (if present)
     to the corresponding MQTT state topic.
     """
-    global last_values, reset_detected_today, last_reset_time
+    global last_values, reset_detected_today, last_reset_time, last_cleared_date, cumulative_totals, last_raw_values
     
     mqtt_conf = config.get("mqtt", {})
     state_prefix = mqtt_conf.get("state_prefix", "home/sensors/home_power")
@@ -145,14 +201,19 @@ def process_line(line, config, mqtt_client):
         return
     logger.debug("Received fields: %s", fields)
 
-    # Check if we've moved to a new day (reset the daily flag)
+    # Check if we've moved to a new day (reset the daily flag) - but only once per day
     current_time = datetime.now()
-    if last_reset_time and current_time.date() > last_reset_time.date():
+    current_date = current_time.date()
+    
+    if last_reset_time and current_date > last_reset_time.date() and last_cleared_date != current_date:
         reset_detected_today = False
+        last_cleared_date = current_date
         logger.info("New day detected, reset detection flag cleared")
 
     # Collect energy sensor values for reset detection
-    energy_sensors = ["13", "14", "15", "16", "17"]  # All your energy sensors
+    # Automatically detect energy sensors based on device_class
+    energy_sensors = [key for key, sensor_conf in sensors.items() 
+                     if sensor_conf.get("device_class") == "energy"]
     current_energy_values = {}
     reset_votes = 0
     
@@ -173,23 +234,27 @@ def process_line(line, config, mqtt_client):
                 continue
 
     # Majority vote: if 3 or more energy sensors show reset, it's a reset
+    reset_timestamp = None
     if reset_votes >= 3 and not reset_detected_today:
         reset_detected_today = True
         last_reset_time = current_time
         reset_timestamp = current_time.isoformat()
         logger.info(f"RESET DETECTED at {reset_timestamp} - {reset_votes} sensors voted for reset")
         
-        # Publish last_reset for all energy sensors
-        for sensor_key in energy_sensors:
-            if sensor_key in sensors:
-                reset_topic = f"{state_prefix}/{device_id}/{sensor_key}/last_reset"
-                mqtt_client.publish(reset_topic, payload=reset_timestamp, retain=True)
-                logger.info(f"Published last_reset for sensor {sensor_key}: {reset_timestamp}")
+        # For sensor 15, add last raw value to cumulative total before reset
+        if "15" in last_raw_values:
+            if "15" not in cumulative_totals:
+                cumulative_totals["15"] = 0
+            cumulative_totals["15"] += last_raw_values["15"]
+            logger.info(f"Added {last_raw_values['15']} Wh to cumulative total for sensor 15, new total: {cumulative_totals['15']} Wh")
+            # Save to file immediately after update
+            save_cumulative_data()
 
-    # Update last_values with current values
+    # Update last_values and last_raw_values with current values
     last_values.update(current_energy_values)
+    last_raw_values.update(current_energy_values)
 
-    # Now process and publish all sensors normally
+    # Now process and publish all sensors
     for sensor_key in sorted(sensors, key=lambda x: int(x)):
         sensor_conf = sensors[sensor_key]
         sensor_name = sensor_conf.get("name")
@@ -205,21 +270,54 @@ def process_line(line, config, mqtt_client):
         if index < len(fields):
             value = fields[index]
             sensor_state_topic = f"{state_prefix}/{device_id}/{sensor_key}/state"
+            
             if is_number(value):
+                # Apply transformations
                 if index == 13:
                     value = str(-int(value))
                 if index == 18:
                     value = f'{100.0 * int(value) / 255.0:.2f}'
-                mqtt_client.publish(sensor_state_topic, payload=value)
+                
+                # Special handling for sensor 15 (cumulative tracking)
+                if sensor_key == "15" and sensor_key in energy_sensors:
+                    raw_value = float(value)
+                    
+                    # Initialize cumulative total if not exists
+                    if "15" not in cumulative_totals:
+                        cumulative_totals["15"] = 0
+                    
+                    # Calculate cumulative value (cumulative total + current raw value)
+                    cumulative_value = cumulative_totals["15"] + raw_value
+                    
+                    mqtt_client.publish(sensor_state_topic, payload=str(cumulative_value))
+                    logger.debug("Published cumulative energy sensor '%s' (field %s): %s Wh to topic '%s'",
+                                sensor_name, sensor_key, cumulative_value, sensor_state_topic)
+                # For other energy sensors, send JSON with state and optionally last_reset
+                elif sensor_key in energy_sensors:
+                    payload = {"state": float(value) if index != 13 else int(value)}
+                    
+                    # Add last_reset if we just detected a reset
+                    if reset_timestamp:
+                        payload["last_reset"] = reset_timestamp
+                        
+                    mqtt_client.publish(sensor_state_topic, payload=json.dumps(payload))
+                    logger.debug("Published energy sensor '%s' (field %s): %s to topic '%s'",
+                                sensor_name, sensor_key, payload, sensor_state_topic)
+                else:
+                    # For non-energy sensors, send plain value
+                    mqtt_client.publish(sensor_state_topic, payload=value)
+                    logger.debug("Published sensor '%s' (field %s): %s to topic '%s'",
+                                sensor_name, sensor_key, value, sensor_state_topic)
             else:
                 logger.warning(f'field {index} ("{value}") in the serial data line "{line}" is not a number')
                 return
-            logger.debug("Published sensor '%s' (field %s): %s to topic '%s'",
-                         sensor_name, sensor_key, value, sensor_state_topic)
         else:
             logger.warning("Field index %d not found in data: %s", index, fields)
 
 def main():
+    # Load cumulative data first, before anything else
+    load_cumulative_data()
+    
     config = load_config()
     loglevel = getattr(logging, config.get("loglevel", 'INFO').upper(), logging.INFO)
     # Get the root logger and set the log level
@@ -273,6 +371,8 @@ def main():
     except KeyboardInterrupt:
         logger.info("Received shutdown signal. Exiting...")
     finally:
+        # Save cumulative data one final time before exit
+        save_cumulative_data()
         ser.close()
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
