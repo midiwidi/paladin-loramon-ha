@@ -25,6 +25,9 @@ CUMULATIVE_DATA_FILE = "cumulative_totals.json"
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+last_save_time = None
+SAVE_INTERVAL = 300  # Save cumulative data every 5 minutes
+
 def is_number(s):
     try:
         float(s)
@@ -178,6 +181,7 @@ def open_serial_port(config):
             retry_delay = min(retry_delay * 2, max_retry_delay)
 
 def process_line(line, config, mqtt_client):
+    global last_save_time
     """
     Parse a newline-terminated, comma-separated string from the serial port.
     For each sensor defined in the config, publish its value (if present)
@@ -290,8 +294,13 @@ def process_line(line, config, mqtt_client):
                     cumulative_value = cumulative_totals["15"] + raw_value
                     
                     mqtt_client.publish(sensor_state_topic, payload=str(cumulative_value))
-                    logger.debug("Published cumulative energy sensor '%s' (field %s): %s Wh to topic '%s'",
-                                sensor_name, sensor_key, cumulative_value, sensor_state_topic)
+                    
+                    # Periodic save
+                    current_time = time.time()
+                    if last_save_time is None or (current_time - last_save_time) >= SAVE_INTERVAL:
+                        save_cumulative_data()
+                        last_save_time = current_time
+                        logger.debug("Periodic save of cumulative totals")
                 # For other energy sensors, send JSON with state and optionally last_reset
                 elif sensor_key in energy_sensors:
                     value_to_send = float(value) if index != 13 else int(value)
