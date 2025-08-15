@@ -131,7 +131,7 @@ def publish_discovery(client, config):
             continue
 
         discovery_topic = f"{discovery_prefix}/sensor/{device_id}/{sensor_key}/config"
-        sensor_state_topic = f"{state_prefix}/{sensor_key}/state"  # Remove device_id segment
+        sensor_state_topic = f"{state_prefix}/{sensor_key}/state"
         payload = {
             "state_topic": sensor_state_topic,
             "unique_id": f"{device_id}_{sensor_key}",
@@ -146,17 +146,9 @@ def publish_discovery(client, config):
         # Add all attributes given in the config to the payload
         payload.update(sensor_conf)
         
-        # For sensor 15 specifically, ensure it uses total_increasing
-        if sensor_key == "15" and sensor_key in energy_sensors:
+        # For all energy sensors, ensure they use total_increasing
+        if sensor_key in energy_sensors:
             payload["state_class"] = "total_increasing"
-            # Remove last_reset_value_template if it exists in config
-            payload.pop("last_reset_value_template", None)
-            logger.info("Configured sensor 15 for cumulative (total_increasing) tracking")
-        # For other energy sensors, add JSON parsing templates for last_reset support
-        elif sensor_key in energy_sensors:
-            payload["value_template"] = "{{ value_json.state }}"
-            payload["json_attributes_topic"] = sensor_state_topic
-            payload["json_attributes_template"] = "{{ value_json | tojson }}"
 
         client.publish(discovery_topic, payload=json.dumps(payload), retain=True)
         logger.info("Published discovery for sensor '%s' (field %s) on topic '%s'",
