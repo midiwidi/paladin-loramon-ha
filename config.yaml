@@ -119,10 +119,8 @@ sensors:
   "18":
     name: "Paladin SSR Output"
     unit_of_measurement: "%"
-    device_class: ""
     state_class: "measurement"
   "19":
     name: "Timestamp (Hack)"
     unit_of_measurement: "s"
-    device_class: ""
     state_class: "measurement"
